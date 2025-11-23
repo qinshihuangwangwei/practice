@@ -553,21 +553,6 @@
             gap: 5px;
         }
 
-        /* 加载指示器 */
-        .loading {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid rgba(255,255,255,.3);
-            border-radius: 50%;
-            border-top-color: #fff;
-            animation: spin 1s ease-in-out infinite;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
         /* 响应式设计 */
         @media (max-width: 992px) {
             .dashboard {
@@ -1054,305 +1039,1347 @@
         </div>
     </footer>
 
-   <script>
-// ==================== 配置区（上线后改这里）===================
-const API_BASE = 'https://fittogether-backend.onrender.com/api';  
-// 本地测试后端时改成：http://localhost:5000/api
-// 等你部署完 Render 之后，把上面这行改成你自己的域名
+    <script>
+        // 确保DOM完全加载后再执行脚本
+        document.addEventListener('DOMContentLoaded', function() {
+            // 初始化应用
+            initApp();
+        });
 
-let currentUser = null;
-let token = localStorage.getItem('fitToken') || null;
+        // 应用初始化
+        function initApp() {
+            // 初始化数据
+            initData();
+            
+            // 绑定事件监听器
+            bindEvents();
+            
+            // 检查登录状态
+            checkLoginStatus();
+        }
 
-// ==================== 通用 API 调用函数 ====================
-async function apiCall(endpoint, options = {}) {
-  const url = API_BASE + endpoint;
-  const config = {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-    },
-    ...options
-  };
+        // 模拟数据存储
+        let appData = {
+            currentUser: null,
+            users: {},
+            workouts: {},
+            friends: {},
+            friendRequests: {},
+            achievements: {},
+            isLoggedIn: false
+        };
 
-  try {
-    const res = await fetch(url, config);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message || data.error || '请求失败');
-    return data;
-  } catch (err) {
-    throw new Error(err.message || '网络错误');
-  }
-}
+        // 初始化数据
+        function initData() {
+            // 从本地存储加载数据
+            const storedUsers = localStorage.getItem('fitTogetherUsers');
+            const storedWorkouts = localStorage.getItem('fitTogetherWorkouts');
+            const storedFriends = localStorage.getItem('fitTogetherFriends');
+            const storedFriendRequests = localStorage.getItem('fitTogetherFriendRequests');
+            const storedAchievements = localStorage.getItem('fitTogetherAchievements');
+            
+            appData.users = storedUsers ? JSON.parse(storedUsers) : {};
+            appData.workouts = storedWorkouts ? JSON.parse(storedWorkouts) : {};
+            appData.friends = storedFriends ? JSON.parse(storedFriends) : {};
+            appData.friendRequests = storedFriendRequests ? JSON.parse(storedFriendRequests) : {};
+            appData.achievements = storedAchievements ? JSON.parse(storedAchievements) : {};
+            
+            // 检查是否有登录用户
+            const loggedInUserId = localStorage.getItem('fitTogetherCurrentUser');
+            if (loggedInUserId && appData.users[loggedInUserId]) {
+                appData.currentUser = appData.users[loggedInUserId];
+                appData.isLoggedIn = true;
+            }
+        }
 
-// ==================== 登录 / 注册 / 退出 ====================
-async function handleAuth(e) {
-  e.preventDefault();
-  const username = document.getElementById('authUsername').value.trim();
-  const password = document.getElementById('authPassword').value;
-  const isLogin = document.getElementById('authModalTitle').textContent === '登录';
+        // 绑定事件监听器
+        function bindEvents() {
+            // 导航菜单点击事件
+            document.querySelectorAll('nav a, .sidebar-menu a').forEach(link => {
+                link.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const page = this.getAttribute('data-page');
+                    showPage(page);
+                    
+                    // 更新活动菜单项
+                    document.querySelectorAll('nav a, .sidebar-menu a').forEach(item => {
+                        item.classList.remove('active');
+                    });
+                    this.classList.add('active');
+                });
+            });
+            
+            // 登录按钮
+            document.getElementById('loginBtn').addEventListener('click', showAuthModal);
+            
+            // 添加训练记录按钮
+            document.getElementById('addWorkoutBtn').addEventListener('click', showWorkoutModal);
+            document.getElementById('addWorkoutBtn2').addEventListener('click', showWorkoutModal);
+            
+            // 添加好友按钮
+            document.getElementById('addFriendBtn').addEventListener('click', showFriendModal);
+            document.getElementById('addFriendBtn2').addEventListener('click', showFriendModal);
+            
+            // 关闭模态框
+            document.querySelectorAll('.close-modal').forEach(button => {
+                button.addEventListener('click', function() {
+                    this.closest('.modal').style.display = 'none';
+                });
+            });
+            
+            // 点击模态框外部关闭
+            window.addEventListener('click', function(event) {
+                if (event.target.classList.contains('modal')) {
+                    event.target.style.display = 'none';
+                }
+            });
+            
+            // 登录/注册表单提交
+            document.getElementById('authForm').addEventListener('submit', handleAuth);
+            
+            // 切换登录/注册模式
+            document.getElementById('switchAuthMode').addEventListener('click', function(e) {
+                e.preventDefault();
+                toggleAuthMode();
+            });
+            
+            // 训练表单提交
+            document.getElementById('workoutForm').addEventListener('submit', saveWorkout);
+            
+            // 好友表单提交
+            document.getElementById('friendForm').addEventListener('submit', sendFriendRequest);
+            
+            // 设置表单提交
+            document.getElementById('profileForm').addEventListener('submit', saveProfile);
+            
+            // 训练记录筛选
+            document.getElementById('workoutFilter').addEventListener('change', filterWorkouts);
+        }
 
-  try {
-    const endpoint = isLogin ? '/auth/login' : '/auth/register';
-    const res = await apiCall(endpoint, {
-      method: 'POST',
-      body: JSON.stringify({ username, password })
-    });
+        // 检查登录状态
+        function checkLoginStatus() {
+            if (appData.isLoggedIn && appData.currentUser) {
+                // 用户已登录
+                document.getElementById('userName').textContent = appData.currentUser.username;
+                document.getElementById('profileName').textContent = appData.currentUser.username;
+                document.getElementById('loginBtn').textContent = '退出';
+                document.getElementById('loginBtn').removeEventListener('click', showAuthModal);
+                document.getElementById('loginBtn').addEventListener('click', logout);
+                
+                // 更新我的用户ID
+                document.getElementById('myUserId').textContent = appData.currentUser.id;
+                
+                // 加载用户数据
+                loadDashboard();
+            } else {
+                // 用户未登录
+                document.getElementById('userName').textContent = '未登录';
+                document.getElementById('profileName').textContent = '未登录';
+                document.getElementById('loginBtn').textContent = '登录';
+                document.getElementById('loginBtn').removeEventListener('click', logout);
+                document.getElementById('loginBtn').addEventListener('click', showAuthModal);
+                
+                // 显示登录提示
+                showLoginPrompt();
+            }
+        }
 
-    token = res.token;
-    currentUser = res.user;
-    localStorage.setItem('fitToken', token);
-    document.getElementById('authModal').style.display = 'none';
-    checkLoginStatus();
-    alert(isLogin ? '登录成功！' : '注册成功，已自动登录');
-  } catch (err) {
-    alert(err.message);
-  }
-}
+        // 显示登录提示
+        function showLoginPrompt() {
+            document.getElementById('workoutList').innerHTML = '<li class="workout-item"><div class="workout-info"><p>请登录后查看训练记录</p></div></li>';
+            document.getElementById('allWorkoutsList').innerHTML = '<li class="workout-item"><div class="workout-info"><p>请登录后查看训练记录</p></div></li>';
+            document.getElementById('friendsList').innerHTML = '<div class="friend"><div class="friend-info"><p>请登录后查看好友列表</p></div></div>';
+            document.getElementById('friendsPageList').innerHTML = '<div class="friend"><div class="friend-info"><p>请登录后查看好友列表</p></div></div>';
+            document.getElementById('friendRequestsList').innerHTML = '<div class="friend"><div class="friend-info"><p>请登录后查看好友请求</p></div></div>';
+            document.getElementById('friendsLeaderboard').innerHTML = '<div class="friend"><div class="friend-info"><p>请登录后查看好友排行榜</p></div></div>';
+            document.getElementById('teamActivity').innerHTML = '<div class="activity-item"><div class="friend"><div class="friend-avatar"><i class="fas fa-user"></i></div><div class="friend-info"><div class="friend-name">系统提示</div><div class="activity-text">请登录后查看好友动态</div><div class="activity-time">刚刚</div></div></div></div>';
+            document.getElementById('achievementsList').innerHTML = '<div class="badge"><i class="fas fa-lock"></i><span>请登录</span></div>';
+            
+            // 禁用设置表单
+            document.getElementById('profileForm').querySelectorAll('input, textarea, button').forEach(element => {
+                element.disabled = true;
+            });
+        }
 
-function logout() {
-  if (!confirm('确定要退出登录吗？')) return;
-  token = null;
-  currentUser = null;
-  localStorage.removeItem('fitToken');
-  checkLoginStatus();
-  alert('已退出登录');
-}
+        // 显示登录/注册模态框
+        function showAuthModal() {
+            const modal = document.getElementById('authModal');
+            const title = document.getElementById('authModalTitle');
+            const submitBtn = document.getElementById('authSubmitBtn');
+            const switchLink = document.getElementById('switchAuthMode');
+            const confirmPasswordGroup = document.getElementById('confirmPasswordGroup');
+            
+            // 重置表单
+            document.getElementById('authForm').reset();
+            
+            // 设置为登录模式
+            title.textContent = '登录';
+            submitBtn.textContent = '登录';
+            switchLink.textContent = '没有账号？点击注册';
+            confirmPasswordGroup.style.display = 'none';
+            
+            modal.style.display = 'flex';
+        }
 
-// ==================== 检查登录状态 ====================
-async function checkLoginStatus() {
-  if (!token) {
-    showLoginPrompt();
-    document.getElementById('loginBtn').textContent = '登录';
-    document.getElementById('loginBtn').onclick = showAuthModal;
-    return;
-  }
+        // 切换登录/注册模式
+        function toggleAuthMode() {
+            const title = document.getElementById('authModalTitle');
+            const submitBtn = document.getElementById('authSubmitBtn');
+            const switchLink = document.getElementById('switchAuthMode');
+            const confirmPasswordGroup = document.getElementById('confirmPasswordGroup');
+            
+            if (title.textContent === '登录') {
+                // 切换到注册模式
+                title.textContent = '注册';
+                submitBtn.textContent = '注册';
+                switchLink.textContent = '已有账号？点击登录';
+                confirmPasswordGroup.style.display = 'block';
+            } else {
+                // 切换到登录模式
+                title.textContent = '登录';
+                submitBtn.textContent = '登录';
+                switchLink.textContent = '没有账号？点击注册';
+                confirmPasswordGroup.style.display = 'none';
+            }
+        }
 
-  try {
-    const res = await apiCall('/auth/me');
-    currentUser = res.user;
+        // 处理登录/注册
+        function handleAuth(e) {
+            e.preventDefault();
+            
+            const username = document.getElementById('authUsername').value;
+            const password = document.getElementById('authPassword').value;
+            const isLoginMode = document.getElementById('authModalTitle').textContent === '登录';
+            
+            if (isLoginMode) {
+                // 登录逻辑
+                const user = Object.values(appData.users).find(u => u.username === username && u.password === password);
+                if (user) {
+                    appData.currentUser = user;
+                    appData.isLoggedIn = true;
+                    localStorage.setItem('fitTogetherCurrentUser', user.id);
+                    document.getElementById('authModal').style.display = 'none';
+                    checkLoginStatus();
+                    alert('登录成功！');
+                } else {
+                    alert('用户名或密码错误！');
+                }
+            } else {
+                // 注册逻辑
+                const confirmPassword = document.getElementById('authConfirmPassword').value;
+                
+                if (password !== confirmPassword) {
+                    alert('两次输入的密码不一致！');
+                    return;
+                }
+                
+                if (Object.values(appData.users).find(u => u.username === username)) {
+                    alert('用户名已存在！');
+                    return;
+                }
+                
+                // 创建新用户
+                const userId = generateUserId();
+                const newUser = {
+                    id: userId,
+                    username: username,
+                    password: password,
+                    email: '',
+                    bio: '',
+                    weeklyGoal: 5,
+                    level: 1,
+                    experience: 0,
+                    streak: 0,
+                    joinDate: new Date().toISOString()
+                };
+                
+                appData.users[userId] = newUser;
+                appData.workouts[userId] = [];
+                appData.friends[userId] = [];
+                appData.friendRequests[userId] = [];
+                appData.achievements[userId] = [];
+                
+                // 保存到本地存储
+                localStorage.setItem('fitTogetherUsers', JSON.stringify(appData.users));
+                localStorage.setItem('fitTogetherWorkouts', JSON.stringify(appData.workouts));
+                localStorage.setItem('fitTogetherFriends', JSON.stringify(appData.friends));
+                localStorage.setItem('fitTogetherFriendRequests', JSON.stringify(appData.friendRequests));
+                localStorage.setItem('fitTogetherAchievements', JSON.stringify(appData.achievements));
+                
+                // 自动登录
+                appData.currentUser = newUser;
+                appData.isLoggedIn = true;
+                localStorage.setItem('fitTogetherCurrentUser', userId);
+                
+                document.getElementById('authModal').style.display = 'none';
+                checkLoginStatus();
+                alert('注册成功！');
+            }
+        }
 
-    document.getElementById('userName').textContent = currentUser.username;
-    document.getElementById('profileName').textContent = currentUser.username;
-    document.getElementById('myUserId').textContent = currentUser._id;
-    document.getElementById('loginBtn').textContent = '退出';
-    document.getElementById('loginBtn').onclick = logout;
+        // 生成用户ID
+        function generateUserId() {
+            return 'user_' + Math.random().toString(36).substr(2, 9);
+        }
 
-    loadDashboard();  // 登录成功后自动刷新所有数据
-  } catch (err) {
-    localStorage.removeItem('fitToken');
-    token = null;
-    showLoginPrompt();
-  }
-}
+        // 退出登录
+        function logout() {
+            if (confirm('确定要退出登录吗?')) {
+                appData.currentUser = null;
+                appData.isLoggedIn = false;
+                localStorage.removeItem('fitTogetherCurrentUser');
+                checkLoginStatus();
+                alert('已退出登录');
+            }
+        }
 
-// ==================== 页面显示控制 ====================
-function showPage(page) {
-  document.querySelectorAll('.page, .dashboard').forEach(el => el.style.display = 'none');
-  if (page === 'dashboard') {
-    document.getElementById('dashboardPage').style.display = 'grid';
-    if (currentUser) loadDashboard();
-  } else {
-    document.getElementById(page + 'Page').style.display = 'block';
-    if (currentUser) {
-      const loaders = {
-        workouts: loadWorkoutsPage,
-        statistics: loadStatisticsPage,
-        friends: loadFriendsPage,
-        achievements: loadAchievementsPage,
-        settings: loadSettingsPage
-      };
-      loaders[page] && loaders[page]();
-    }
-  }
-}
+        // 显示指定页面
+        function showPage(page) {
+            // 隐藏所有页面
+            document.querySelectorAll('.page, .dashboard').forEach(element => {
+                element.style.display = 'none';
+            });
+            
+            // 显示指定页面
+            if (page === 'dashboard') {
+                document.getElementById('dashboardPage').style.display = 'grid';
+                if (appData.isLoggedIn) {
+                    loadDashboard();
+                }
+            } else {
+                document.getElementById(page + 'Page').style.display = 'block';
+                
+                // 加载页面特定内容
+                if (appData.isLoggedIn) {
+                    switch(page) {
+                        case 'workouts':
+                            loadWorkoutsPage();
+                            break;
+                        case 'statistics':
+                            loadStatisticsPage();
+                            break;
+                        case 'friends':
+                            loadFriendsPage();
+                            break;
+                        case 'achievements':
+                            loadAchievementsPage();
+                            break;
+                        case 'settings':
+                            loadSettingsPage();
+                            break;
+                    }
+                }
+            }
+        }
 
-// ==================== 训练记录相关 ====================
-function showWorkoutModal(id = null) {
-  if (!currentUser) return alert('请先登录');
-  const modal = document.getElementById('workoutModal');
-  const form = document.getElementById('workoutForm');
-  form.reset();
-  document.getElementById('workoutDate').valueAsDate = new Date();
-  document.getElementById('workoutId').value = '';
+        // 加载仪表盘
+        function loadDashboard() {
+            loadTodayWorkouts();
+            loadFriendActivity();
+            loadWeeklyStats();
+            loadMonthlyGoals();
+            loadFriendsList();
+        }
 
-  if (id) {
-    // 编辑模式（后面会从 API 拿数据填充）
-    document.getElementById('workoutModalTitle').textContent = '编辑训练记录';
-  } else {
-    document.getElementById('workoutModalTitle').textContent = '添加训练记录';
-  }
-  modal.style.display = 'flex';
-}
+        // 加载今日训练记录
+        function loadTodayWorkouts() {
+            const today = new Date().toISOString().split('T')[0];
+            const userWorkouts = appData.workouts[appData.currentUser.id] || [];
+            const todayWorkouts = userWorkouts.filter(workout => workout.date === today);
+            const workoutList = document.getElementById('workoutList');
+            
+            workoutList.innerHTML = '';
+            
+            if (todayWorkouts.length === 0) {
+                workoutList.innerHTML = '<li class="workout-item"><div class="workout-info"><p>今天还没有训练记录，点击"添加记录"开始记录吧！</p></div></li>';
+                return;
+            }
+            
+            todayWorkouts.forEach(workout => {
+                const workoutItem = document.createElement('li');
+                workoutItem.className = 'workout-item';
+                workoutItem.innerHTML = `
+                    <div class="workout-info">
+                        <h4>${workout.name}</h4>
+                        <div class="workout-meta">
+                            <span><i class="far fa-clock"></i> ${workout.duration}分钟</span>
+                            <span><i class="fas fa-dumbbell"></i> ${getWorkoutTypeText(workout.type)}</span>
+                            ${workout.notes ? `<span><i class="fas fa-sticky-note"></i> ${workout.notes}</span>` : ''}
+                        </div>
+                    </div>
+                    <div class="workout-actions">
+                        <button class="edit-btn" data-id="${workout.id}"><i class="fas fa-edit"></i></button>
+                        <button class="delete-btn" data-id="${workout.id}"><i class="fas fa-trash"></i></button>
+                    </div>
+                `;
+                workoutList.appendChild(workoutItem);
+            });
+            
+            // 绑定编辑和删除事件
+            bindWorkoutActions();
+        }
 
-async function saveWorkout(e) {
-  e.preventDefault();
-  const id = document.getElementById('workoutId').value;
-  const payload = {
-    name: document.getElementById('workoutName').value,
-    duration: Number(document.getElementById('workoutDuration').value),
-    date: document.getElementById('workoutDate').value,
-    type: document.getElementById('workoutType').value,
-    notes: document.getElementById('workoutNotes').value
-  };
+        // 获取训练类型文本
+        function getWorkoutTypeText(type) {
+            const typeMap = {
+                'strength': '力量训练',
+                'cardio': '有氧运动',
+                'flexibility': '柔韧性训练',
+                'sports': '球类运动',
+                'other': '其他'
+            };
+            return typeMap[type] || '其他';
+        }
 
-  try {
-    if (id) {
-      await apiCall(`/workouts/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
-      alert('更新成功');
-    } else {
-      await apiCall('/workouts', { method: 'POST', body: JSON.stringify(payload) });
-      alert('添加成功');
-    }
-    document.getElementById('workoutModal').style.display = 'none';
-    loadDashboard();
-    if (document.getElementById('workoutsPage').style.display !== 'none') loadWorkoutsPage();
-  } catch (err) {
-    alert(err.message);
-  }
-}
+        // 绑定训练记录操作事件
+        function bindWorkoutActions() {
+            document.querySelectorAll('.edit-btn').forEach(button => {
+                button.addEventListener('click', function() {
+                    const workoutId = this.getAttribute('data-id');
+                    editWorkout(workoutId);
+                });
+            });
+            
+            document.querySelectorAll('.delete-btn').forEach(button => {
+                button.addEventListener('click', function() {
+                    const workoutId = this.getAttribute('data-id');
+                    deleteWorkout(workoutId);
+                });
+            });
+        }
 
-async function deleteWorkout(id) {
-  if (!confirm('确定删除？')) return;
-  try {
-    await apiCall(`/workouts/${id}`, { method: 'DELETE' });
-    alert('删除成功');
-    loadDashboard();
-    if (document.getElementById('workoutsPage').style.display !== 'none') loadWorkoutsPage();
-  } catch (err) {
-    alert(err.message);
-  }
-}
+        // 加载好友动态
+        function loadFriendActivity() {
+            const teamActivity = document.getElementById('teamActivity');
+            const userFriends = appData.friends[appData.currentUser.id] || [];
+            
+            teamActivity.innerHTML = '';
+            
+            if (userFriends.length === 0) {
+                teamActivity.innerHTML = '<div class="activity-item"><div class="friend"><div class="friend-avatar"><i class="fas fa-user"></i></div><div class="friend-info"><div class="friend-name">系统提示</div><div class="activity-text">您还没有好友，添加好友后可以看到他们的动态</div><div class="activity-time">刚刚</div></div></div></div>';
+                return;
+            }
+            
+            // 模拟好友动态
+            const activities = [];
+            userFriends.forEach(friendId => {
+                const friend = appData.users[friendId];
+                if (friend) {
+                    const friendWorkouts = appData.workouts[friendId] || [];
+                    if (friendWorkouts.length > 0) {
+                        const latestWorkout = friendWorkouts[friendWorkouts.length - 1];
+                        activities.push({
+                            member: friend.username,
+                            action: `完成了${latestWorkout.name}，训练时长${latestWorkout.duration}分钟`,
+                            time: "今天"
+                        });
+                    }
+                }
+            });
+            
+            if (activities.length === 0) {
+                teamActivity.innerHTML = '<div class="activity-item"><div class="friend"><div class="friend-avatar"><i class="fas fa-user"></i></div><div class="friend-info"><div class="friend-name">系统提示</div><div class="activity-text">您的好友还没有训练记录</div><div class="activity-time">刚刚</div></div></div></div>';
+                return;
+            }
+            
+            activities.forEach(activity => {
+                const activityItem = document.createElement('div');
+                activityItem.className = 'activity-item';
+                activityItem.innerHTML = `
+                    <div class="friend">
+                        <div class="friend-avatar">
+                            <i class="fas fa-user"></i>
+                        </div>
+                        <div class="friend-info">
+                            <div class="friend-name">${activity.member}</div>
+                            <div class="activity-text">${activity.action}</div>
+                            <div class="activity-time">${activity.time}</div>
+                        </div>
+                    </div>
+                `;
+                teamActivity.appendChild(activityItem);
+            });
+        }
 
-// ==================== 好友相关 ====================
-function showFriendModal() {
-  if (!currentUser) return alert('请先登录');
-  document.getElementById('friendModal').style.display = 'flex';
-}
+        // 加载本周统计
+        function loadWeeklyStats() {
+            const weeklyStats = document.getElementById('weeklyStats');
+            const userWorkouts = appData.workouts[appData.currentUser.id] || [];
+            
+            // 计算本周数据
+            const today = new Date();
+            const startOfWeek = new Date(today);
+            startOfWeek.setDate(today.getDate() - today.getDay());
+            
+            const weekWorkouts = userWorkouts.filter(workout => {
+                const workoutDate = new Date(workout.date);
+                return workoutDate >= startOfWeek;
+            });
+            
+            const totalWorkouts = weekWorkouts.length;
+            const totalDuration = weekWorkouts.reduce((sum, workout) => sum + workout.duration, 0) / 60;
+            const userAchievements = appData.achievements[appData.currentUser.id] || [];
+            const unlockedAchievements = userAchievements.filter(a => a.unlocked).length;
+            
+            weeklyStats.innerHTML = `
+                <div class="stat-card">
+                    <i class="fas fa-dumbbell fa-2x"></i>
+                    <div class="stat-value">${totalWorkouts}</div>
+                    <div class="stat-label">训练次数</div>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-clock fa-2x"></i>
+                    <div class="stat-value">${totalDuration.toFixed(1)}</div>
+                    <div class="stat-label">训练时长(小时)</div>
+                </div>
+                <div class="stat-card primary">
+                    <i class="fas fa-calendar fa-2x"></i>
+                    <div class="stat-value">${appData.currentUser.streak}</div>
+                    <div class="stat-label">连续训练天数</div>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-trophy fa-2x"></i>
+                    <div class="stat-value">${unlockedAchievements}</div>
+                    <div class="stat-label">获得成就</div>
+                </div>
+            `;
+        }
 
-async function sendFriendRequest(e) {
-  e.preventDefault();
-  const friendId = document.getElementById('friendId').value.trim();
-  try {
-    await apiCall('/friends/request', {
-      method: 'POST',
-      body: JSON.stringify({ toUserId: friendId })
-    });
-    alert('好友请求已发送');
-    document.getElementById('friendModal').style.display = 'none';
-  } catch (err) {
-    alert(err.message);
-  }
-}
+        // 加载月度目标
+        function loadMonthlyGoals() {
+            const monthlyGoals = document.getElementById('monthlyGoals');
+            const userWorkouts = appData.workouts[appData.currentUser.id] || [];
+            
+            // 计算本月数据
+            const today = new Date();
+            const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+            
+            const monthWorkouts = userWorkouts.filter(workout => {
+                const workoutDate = new Date(workout.date);
+                return workoutDate >= startOfMonth;
+            });
+            
+            const workoutCount = monthWorkouts.length;
+            const workoutGoal = 20;
+            const workoutPercent = Math.min((workoutCount / workoutGoal) * 100, 100);
+            
+            const durationCount = monthWorkouts.reduce((sum, workout) => sum + workout.duration, 0) / 60;
+            const durationGoal = 15;
+            const durationPercent = Math.min((durationCount / durationGoal) * 100, 100);
+            
+            monthlyGoals.innerHTML = `
+                <div class="goal-item">
+                    <div class="goal-info">
+                        <span>训练次数</span>
+                        <span>${workoutCount}/${workoutGoal}</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress" style="width: ${workoutPercent}%"></div>
+                    </div>
+                </div>
+                <div class="goal-item">
+                    <div class="goal-info">
+                        <span>总训练时长</span>
+                        <span>${durationCount.toFixed(1)}/${durationGoal}小时</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress" style="width: ${durationPercent}%"></div>
+                    </div>
+                </div>
+            `;
+        }
 
-async function acceptFriendRequest(requestId) {
-  try {
-    await apiCall(`/friends/accept/${requestId}`, { method: 'POST' });
-    alert('已添加好友');
-    loadFriendsPage();
-    loadFriendsList();
-  } catch (err) {
-    alert(err.message);
-  }
-}
+        // 加载好友列表
+        function loadFriendsList() {
+            const friendsList = document.getElementById('friendsList');
+            const userFriends = appData.friends[appData.currentUser.id] || [];
+            
+            friendsList.innerHTML = '';
+            
+            if (userFriends.length === 0) {
+                friendsList.innerHTML = '<div class="friend"><div class="friend-info"><p>您还没有好友，点击"添加好友"开始添加吧！</p></div></div>';
+                return;
+            }
+            
+            userFriends.forEach(friendId => {
+                const friend = appData.users[friendId];
+                if (friend) {
+                    const friendWorkouts = appData.workouts[friendId] || [];
+                    const workoutsThisWeek = friendWorkouts.filter(workout => {
+                        const workoutDate = new Date(workout.date);
+                        const today = new Date();
+                        const startOfWeek = new Date(today);
+                        startOfWeek.setDate(today.getDate() - today.getDay());
+                        return workoutDate >= startOfWeek;
+                    }).length;
+                    
+                    const friendElement = document.createElement('div');
+                    friendElement.className = 'friend';
+                    friendElement.innerHTML = `
+                        <div class="friend-avatar">
+                            <i class="fas fa-user"></i>
+                        </div>
+                        <div class="friend-info">
+                            <div class="friend-name">${friend.username}</div>
+                            <div class="friend-stats">本周训练: ${workoutsThisWeek}次</div>
+                        </div>
+                        <div class="friend-status online"></div>
+                    `;
+                    friendsList.appendChild(friendElement);
+                }
+            });
+        }
 
-async function rejectFriendRequest(requestId) {
-  try {
-    await apiCall(`/friends/reject/${requestId}`, { method: 'POST' });
-    alert('已拒绝');
-    loadFriendsPage();
-  } catch (err) {
-    alert(err.message);
-  }
-}
+        // 显示添加训练记录模态框
+        function showWorkoutModal(workoutId = null) {
+            if (!appData.isLoggedIn) {
+                alert('请先登录！');
+                showAuthModal();
+                return;
+            }
+            
+            const modal = document.getElementById('workoutModal');
+            const form = document.getElementById('workoutForm');
+            const title = document.getElementById('workoutModalTitle');
+            const submitBtn = document.getElementById('workoutSubmitBtn');
+            
+            // 重置表单
+            form.reset();
+            document.getElementById('workoutDate').valueAsDate = new Date();
+            
+            if (workoutId) {
+                // 编辑模式
+                title.textContent = '编辑训练记录';
+                submitBtn.textContent = '更新记录';
+                
+                const userWorkouts = appData.workouts[appData.currentUser.id] || [];
+                const workout = userWorkouts.find(w => w.id === workoutId);
+                if (workout) {
+                    document.getElementById('workoutId').value = workout.id;
+                    document.getElementById('workoutName').value = workout.name;
+                    document.getElementById('workoutDuration').value = workout.duration;
+                    document.getElementById('workoutDate').value = workout.date;
+                    document.getElementById('workoutType').value = workout.type;
+                    document.getElementById('workoutNotes').value = workout.notes || '';
+                }
+            } else {
+                // 添加模式
+                title.textContent = '添加训练记录';
+                submitBtn.textContent = '保存记录';
+                document.getElementById('workoutId').value = '';
+            }
+            
+            modal.style.display = 'flex';
+        }
 
-// ==================== 数据加载 & 渲染（保持你原来的渲染逻辑，只换数据源）===================
-// 这里我保留了你原来的所有渲染函数，只是把数据来源换成了 API
-// 你原来的 loadDashboard、loadTodayWorkouts、loadFriendActivity、loadFriendsList 等等都可以继续用
-// 只需要把里面的 localStorage 读取换成 await apiCall 即可
+        // 保存训练记录
+        function saveWorkout(e) {
+            e.preventDefault();
+            
+            const workoutId = document.getElementById('workoutId').value;
+            const name = document.getElementById('workoutName').value;
+            const duration = parseInt(document.getElementById('workoutDuration').value);
+            const date = document.getElementById('workoutDate').value;
+            const type = document.getElementById('workoutType').value;
+            const notes = document.getElementById('workoutNotes').value;
+            
+            const userWorkouts = appData.workouts[appData.currentUser.id] || [];
+            
+            if (workoutId) {
+                // 更新现有记录
+                const index = userWorkouts.findIndex(w => w.id === workoutId);
+                if (index !== -1) {
+                    userWorkouts[index] = {
+                        ...userWorkouts[index],
+                        name,
+                        duration,
+                        date,
+                        type,
+                        notes
+                    };
+                }
+            } else {
+                // 添加新记录
+                const newWorkout = {
+                    id: 'workout_' + Date.now(),
+                    userId: appData.currentUser.id,
+                    name,
+                    duration,
+                    date,
+                    type,
+                    notes
+                };
+                userWorkouts.push(newWorkout);
+                
+                // 检查成就
+                checkAchievements();
+            }
+            
+            // 更新数据
+            appData.workouts[appData.currentUser.id] = userWorkouts;
+            
+            // 保存到本地存储
+            localStorage.setItem('fitTogetherWorkouts', JSON.stringify(appData.workouts));
+            
+            // 更新连续训练天数
+            updateStreak();
+            
+            // 关闭模态框
+            document.getElementById('workoutModal').style.display = 'none';
+            
+            // 重新加载数据
+            loadDashboard();
+            if (document.getElementById('workoutsPage').style.display !== 'none') {
+                loadWorkoutsPage();
+            }
+            
+            alert(workoutId ? '训练记录已更新!' : '训练记录添加成功!');
+        }
 
-// 示例：加载今日训练
-async function loadTodayWorkouts() {
-  try {
-    const workouts = await apiCall('/workouts/today');
-    const list = document.getElementById('workoutList');
-    list.innerHTML = '';
-    if (workouts.length === 0) {
-      list.innerHTML = '<li class="workout-item"><div class="workout-info"><p>今天还没有训练记录，快去添加吧！</p></div></li>';
-      return;
-    }
-    workouts.forEach(w => {
-      const li = document.createElement('li');
-      li.className = 'workout-item';
-      li.innerHTML = `
-        <div class="workout-info">
-          <h4>${w.name}</h4>
-          <div class="workout-meta">
-            <span><i class="far fa-clock"></i> ${w.duration}分钟</span>
-            <span><i class="fas fa-dumbbell"></i> ${getWorkoutTypeText(w.type)}</span>
-          </div>
-        </div>
-        <div class="workout-actions">
-          <button class="edit-btn" data-id="${w._id}"><i class="fas fa-edit"></i></button>
-          <button class="delete-btn" data-id="${w._id}"><i class="fas fa-trash"></i></button>
-        </div>`;
-      list.appendChild(li);
-    });
-    bindWorkoutActions();
-  } catch (err) {
-    console.error(err);
-  }
-}
+        // 更新连续训练天数
+        function updateStreak() {
+            const userWorkouts = appData.workouts[appData.currentUser.id] || [];
+            if (userWorkouts.length === 0) {
+                appData.currentUser.streak = 0;
+                return;
+            }
+            
+            // 按日期排序
+            const sortedWorkouts = [...userWorkouts].sort((a, b) => new Date(b.date) - new Date(a.date));
+            
+            let streak = 0;
+            let currentDate = new Date();
+            
+            // 检查今天是否有训练
+            const today = new Date().toISOString().split('T')[0];
+            if (sortedWorkouts[0].date === today) {
+                streak = 1;
+                currentDate.setDate(currentDate.getDate() - 1);
+            }
+            
+            // 检查连续天数
+            for (let i = 0; i < sortedWorkouts.length; i++) {
+                const workoutDate = new Date(sortedWorkouts[i].date);
+                const expectedDate = new Date(currentDate);
+                
+                if (workoutDate.toISOString().split('T')[0] === expectedDate.toISOString().split('T')[0]) {
+                    streak++;
+                    currentDate.setDate(currentDate.getDate() - 1);
+                } else {
+                    break;
+                }
+            }
+            
+            appData.currentUser.streak = streak;
+            appData.users[appData.currentUser.id] = appData.currentUser;
+            localStorage.setItem('fitTogetherUsers', JSON.stringify(appData.users));
+        }
 
-// 你原来的其他 load 函数（loadFriendActivity、loadWeeklyStats、loadFriendsList、loadFriendsPage 等）
-// 只需要同样改成 await apiCall(...) 就能完美运行，我可以帮你一次性全部改完。
+        // 检查成就
+        function checkAchievements() {
+            const userWorkouts = appData.workouts[appData.currentUser.id] || [];
+            const userAchievements = appData.achievements[appData.currentUser.id] || [];
+            const totalWorkouts = userWorkouts.length;
+            const unlockedAchievements = [];
+            
+            // 初始化成就数据
+            if (userAchievements.length === 0) {
+                const initialAchievements = [
+                    { id: 'ach_1', name: '健身新手', description: '完成第一次训练', icon: 'fas fa-star', unlocked: false },
+                    { id: 'ach_2', name: '持之以恒', description: '连续训练7天', icon: 'fas fa-fire', unlocked: false },
+                    { id: 'ach_3', name: '训练达人', description: '完成10次训练', icon: 'fas fa-dumbbell', unlocked: false },
+                    { id: 'ach_4', name: '健身爱好者', description: '完成50次训练', icon: 'fas fa-heart', unlocked: false }
+                ];
+                userAchievements.push(...initialAchievements);
+            }
+            
+            // 检查"健身新手"成就
+            if (totalWorkouts >= 1 && !userAchievements[0].unlocked) {
+                userAchievements[0].unlocked = true;
+                unlockedAchievements.push(userAchievements[0].name);
+            }
+            
+            // 检查"持之以恒"成就
+            if (appData.currentUser.streak >= 7 && !userAchievements[1].unlocked) {
+                userAchievements[1].unlocked = true;
+                unlockedAchievements.push(userAchievements[1].name);
+            }
+            
+            // 检查"训练达人"成就
+            if (totalWorkouts >= 10 && !userAchievements[2].unlocked) {
+                userAchievements[2].unlocked = true;
+                unlockedAchievements.push(userAchievements[2].name);
+            }
+            
+            // 保存成就状态
+            if (unlockedAchievements.length > 0) {
+                appData.achievements[appData.currentUser.id] = userAchievements;
+                localStorage.setItem('fitTogetherAchievements', JSON.stringify(appData.achievements));
+                
+                // 显示成就解锁通知
+                alert(`恭喜！您解锁了成就：${unlockedAchievements.join('、')}`);
+            }
+        }
 
-// ==================== 初始化 ====================
-document.addEventListener('DOMContentLoaded', () => {
-  checkLoginStatus();
+        // 编辑训练记录
+        function editWorkout(workoutId) {
+            showWorkoutModal(workoutId);
+        }
 
-  // 保留你原来的所有事件绑定
-  document.querySelectorAll('nav a, .sidebar-menu a').forEach(link => {
-    link.addEventListener('click', e => {
-      e.preventDefault();
-      const page = link.dataset.page;
-      showPage(page);
-      document.querySelectorAll('nav a, .sidebar-menu a').forEach(a => a.classList.remove('active'));
-      link.classList.add('active');
-    });
-  });
+        // 删除训练记录
+        function deleteWorkout(workoutId) {
+            if (confirm('确定要删除这条记录吗?')) {
+                const userWorkouts = appData.workouts[appData.currentUser.id] || [];
+                appData.workouts[appData.currentUser.id] = userWorkouts.filter(workout => workout.id !== workoutId);
+                localStorage.setItem('fitTogetherWorkouts', JSON.stringify(appData.workouts));
+                
+                // 更新连续训练天数
+                updateStreak();
+                
+                // 重新加载数据
+                loadDashboard();
+                if (document.getElementById('workoutsPage').style.display !== 'none') {
+                    loadWorkoutsPage();
+                }
+                
+                alert('训练记录已删除!');
+            }
+        }
 
-  document.getElementById('loginBtn').addEventListener('click', () => {
-    if (document.getElementById('loginBtn').textContent === '退出') logout();
-    else showAuthModal();
-  });
+        // 加载训练记录页面
+        function loadWorkoutsPage() {
+            const allWorkoutsList = document.getElementById('allWorkoutsList');
+            const userWorkouts = appData.workouts[appData.currentUser.id] || [];
+            
+            allWorkoutsList.innerHTML = '';
+            
+            if (userWorkouts.length === 0) {
+                allWorkoutsList.innerHTML = '<li class="workout-item"><div class="workout-info"><p>还没有训练记录，点击"添加记录"开始记录吧！</p></div></li>';
+                return;
+            }
+            
+            // 按日期排序（最新的在前）
+            const sortedWorkouts = [...userWorkouts].sort((a, b) => new Date(b.date) - new Date(a.date));
+            
+            sortedWorkouts.forEach(workout => {
+                const workoutItem = document.createElement('li');
+                workoutItem.className = 'workout-item';
+                workoutItem.innerHTML = `
+                    <div class="workout-info">
+                        <h4>${workout.name}</h4>
+                        <div class="workout-meta">
+                            <span><i class="far fa-clock"></i> ${workout.duration}分钟</span>
+                            <span><i class="fas fa-dumbbell"></i> ${getWorkoutTypeText(workout.type)}</span>
+                            <span><i class="far fa-calendar"></i> ${formatDate(workout.date)}</span>
+                            ${workout.notes ? `<span><i class="fas fa-sticky-note"></i> ${workout.notes}</span>` : ''}
+                        </div>
+                    </div>
+                    <div class="workout-actions">
+                        <button class="edit-btn" data-id="${workout.id}"><i class="fas fa-edit"></i></button>
+                        <button class="delete-btn" data-id="${workout.id}"><i class="fas fa-trash"></i></button>
+                    </div>
+                `;
+                allWorkoutsList.appendChild(workoutItem);
+            });
+            
+            // 绑定编辑和删除事件
+            bindWorkoutActions();
+        }
 
-  document.getElementById('authForm').addEventListener('submit', handleAuth);
-  document.getElementById('switchAuthMode').addEventListener('click', e => {
-    e.preventDefault();
-    toggleAuthMode();
-  });
-  document.getElementById('workoutForm').addEventListener('submit', saveWorkout);
-  document.getElementById('friendForm').addEventListener('submit', sendFriendRequest);
+        // 格式化日期
+        function formatDate(dateString) {
+            const options = { year: 'numeric', month: 'short', day: 'numeric' };
+            return new Date(dateString).toLocaleDateString('zh-CN', options);
+        }
 
-  // 其他按钮保持不变
-  document.getElementById('addWorkoutBtn').onclick = () => showWorkoutModal();
-  document.getElementById('addWorkoutBtn2').onclick = () => showWorkoutModal();
-  document.getElementById('addFriendBtn').onclick = showFriendModal;
-  document.getElementById('addFriendBtn2').onclick = showFriendModal;
+        // 筛选训练记录
+        function filterWorkouts() {
+            const filter = document.getElementById('workoutFilter').value;
+            const allWorkoutsList = document.getElementById('allWorkoutsList');
+            const userWorkouts = appData.workouts[appData.currentUser.id] || [];
+            
+            let filteredWorkouts = [...userWorkouts];
+            
+            if (filter === 'week') {
+                const today = new Date();
+                const startOfWeek = new Date(today);
+                startOfWeek.setDate(today.getDate() - today.getDay());
+                
+                filteredWorkouts = filteredWorkouts.filter(workout => {
+                    const workoutDate = new Date(workout.date);
+                    return workoutDate >= startOfWeek;
+                });
+            } else if (filter === 'month') {
+                const today = new Date();
+                const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+                
+                filteredWorkouts = filteredWorkouts.filter(workout => {
+                    const workoutDate = new Date(workout.date);
+                    return workoutDate >= startOfMonth;
+                });
+            }
+            
+            // 按日期排序（最新的在前）
+            filteredWorkouts.sort((a, b) => new Date(b.date) - new Date(a.date));
+            
+            allWorkoutsList.innerHTML = '';
+            
+            if (filteredWorkouts.length === 0) {
+                allWorkoutsList.innerHTML = '<li class="workout-item"><div class="workout-info"><p>没有找到符合条件的训练记录</p></div></li>';
+                return;
+            }
+            
+            filteredWorkouts.forEach(workout => {
+                const workoutItem = document.createElement('li');
+                workoutItem.className = 'workout-item';
+                workoutItem.innerHTML = `
+                    <div class="workout-info">
+                        <h4>${workout.name}</h4>
+                        <div class="workout-meta">
+                            <span><i class="far fa-clock"></i> ${workout.duration}分钟</span>
+                            <span><i class="fas fa-dumbbell"></i> ${getWorkoutTypeText(workout.type)}</span>
+                            <span><i class="far fa-calendar"></i> ${formatDate(workout.date)}</span>
+                            ${workout.notes ? `<span><i class="fas fa-sticky-note"></i> ${workout.notes}</span>` : ''}
+                        </div>
+                    </div>
+                    <div class="workout-actions">
+                        <button class="edit-btn" data-id="${workout.id}"><i class="fas fa-edit"></i></button>
+                        <button class="delete-btn" data-id="${workout.id}"><i class="fas fa-trash"></i></button>
+                    </div>
+                `;
+                allWorkoutsList.appendChild(workoutItem);
+            });
+            
+            // 绑定编辑和删除事件
+            bindWorkoutActions();
+        }
 
-  // 关闭模态框
-  document.querySelectorAll('.close-modal, .modal').forEach(el => {
-    el.addEventListener('click', e => {
-      if (e.target.classList.contains('modal') || e.target.classList.contains('close-modal')) {
-        el.closest('.modal').style.display = 'none';
-      }
-    });
-  });
-});
+        // 加载数据统计页面
+        function loadStatisticsPage() {
+            const userWorkouts = appData.workouts[appData.currentUser.id] || [];
+            
+            // 计算统计数据
+            const totalWorkouts = userWorkouts.length;
+            const totalDuration = userWorkouts.reduce((sum, workout) => sum + workout.duration, 0) / 60;
+            
+            // 更新统计卡片
+            document.getElementById('totalWorkouts').textContent = totalWorkouts;
+            document.getElementById('totalDuration').textContent = totalDuration.toFixed(1);
+            document.getElementById('currentStreak').textContent = appData.currentUser.streak;
+            
+            // 创建图表
+            createWorkoutChart();
+        }
 
-// 你原来的 getWorkoutTypeText、bindWorkoutActions、showLoginPrompt 等函数保持不变，直接保留在下面即可
-// （省略号，保持你原来的所有辅助函数）
+        // 创建训练图表
+        function createWorkoutChart() {
+            const ctx = document.getElementById('workoutChart').getContext('2d');
+            const userWorkouts = appData.workouts[appData.currentUser.id] || [];
+            
+            // 获取最近7天的数据
+            const last7Days = [];
+            for (let i = 6; i >= 0; i--) {
+                const date = new Date();
+                date.setDate(date.getDate() - i);
+                last7Days.push(date.toISOString().split('T')[0]);
+            }
+            
+            const dailyData = last7Days.map(date => {
+                const dayWorkouts = userWorkouts.filter(workout => workout.date === date);
+                return {
+                    date,
+                    workouts: dayWorkouts.length,
+                    duration: dayWorkouts.reduce((sum, workout) => sum + workout.duration, 0)
+                };
+            });
+            
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: last7Days.map(date => formatDate(date)),
+                    datasets: [
+                        {
+                            label: '训练次数',
+                            data: dailyData.map(day => day.workouts),
+                            backgroundColor: 'rgba(67, 97, 238, 0.7)',
+                            borderColor: 'rgba(67, 97, 238, 1)',
+                            borderWidth: 1
+                        },
+                        {
+                            label: '训练时长(分钟)',
+                            data: dailyData.map(day => day.duration),
+                            backgroundColor: 'rgba(76, 201, 240, 0.7)',
+                            borderColor: 'rgba(76, 201, 240, 1)',
+                            borderWidth: 1,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: '训练次数'
+                            }
+                        },
+                        y1: {
+                            position: 'right',
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: '训练时长(分钟)'
+                            },
+                            grid: {
+                                drawOnChartArea: false
+                            }
+                        }
+                    }
+                }
+            });
+        }
 
-</script>
+        // 加载好友页面
+        function loadFriendsPage() {
+            const friendsPageList = document.getElementById('friendsPageList');
+            const friendRequestsList = document.getElementById('friendRequestsList');
+            const friendsLeaderboard = document.getElementById('friendsLeaderboard');
+            const userFriends = appData.friends[appData.currentUser.id] || [];
+            const userFriendRequests = appData.friendRequests[appData.currentUser.id] || [];
+            
+            // 加载好友列表
+            friendsPageList.innerHTML = '';
+            
+            if (userFriends.length === 0) {
+                friendsPageList.innerHTML = '<div class="friend"><div class="friend-info"><p>您还没有好友，点击"添加好友"开始添加吧！</p></div></div>';
+            } else {
+                userFriends.forEach(friendId => {
+                    const friend = appData.users[friendId];
+                    if (friend) {
+                        const friendWorkouts = appData.workouts[friendId] || [];
+                        const workoutsThisWeek = friendWorkouts.filter(workout => {
+                            const workoutDate = new Date(workout.date);
+                            const today = new Date();
+                            const startOfWeek = new Date(today);
+                            startOfWeek.setDate(today.getDate() - today.getDay());
+                            return workoutDate >= startOfWeek;
+                        }).length;
+                        
+                        const friendElement = document.createElement('div');
+                        friendElement.className = 'friend';
+                        friendElement.innerHTML = `
+                            <div class="friend-avatar">
+                                <i class="fas fa-user"></i>
+                            </div>
+                            <div class="friend-info">
+                                <div class="friend-name">${friend.username}</div>
+                                <div class="friend-stats">本周训练: ${workoutsThisWeek}次</div>
+                            </div>
+                            <div class="friend-status online"></div>
+                        `;
+                        friendsPageList.appendChild(friendElement);
+                    }
+                });
+            }
+            
+            // 加载好友请求列表
+            friendRequestsList.innerHTML = '';
+            
+            if (userFriendRequests.length === 0) {
+                friendRequestsList.innerHTML = '<div class="friend"><div class="friend-info"><p>暂无好友请求</p></div></div>';
+            } else {
+                userFriendRequests.forEach(request => {
+                    const requester = appData.users[request.fromUserId];
+                    if (requester) {
+                        const requestElement = document.createElement('div');
+                        requestElement.className = 'request-item';
+                        requestElement.innerHTML = `
+                            <div class="request-info">
+                                <div class="friend-avatar">
+                                    <i class="fas fa-user"></i>
+                                </div>
+                                <div class="friend-info">
+                                    <div class="friend-name">${requester.username}</div>
+                                    <div class="friend-stats">请求添加您为好友</div>
+                                </div>
+                            </div>
+                            <div class="request-actions">
+                                <button class="btn btn-success btn-sm accept-request" data-request-id="${request.id}">同意</button>
+                                <button class="btn btn-danger btn-sm reject-request" data-request-id="${request.id}">拒绝</button>
+                            </div>
+                        `;
+                        friendRequestsList.appendChild(requestElement);
+                    }
+                });
+                
+                // 绑定请求操作事件
+                bindRequestActions();
+            }
+            
+            // 加载好友排行榜
+            friendsLeaderboard.innerHTML = '';
+            
+            if (userFriends.length === 0) {
+                friendsLeaderboard.innerHTML = '<div class="friend"><div class="friend-info"><p>您还没有好友，无法显示排行榜</p></div></div>';
+            } else {
+                const leaderboardData = [];
+                
+                // 添加当前用户
+                const currentUserWorkouts = appData.workouts[appData.currentUser.id] || [];
+                leaderboardData.push({
+                    id: appData.currentUser.id,
+                    name: appData.currentUser.username,
+                    workouts: currentUserWorkouts.length,
+                    duration: currentUserWorkouts.reduce((sum, w) => sum + w.duration, 0) / 60,
+                    streak: appData.currentUser.streak
+                });
+                
+                // 添加好友
+                userFriends.forEach(friendId => {
+                    const friend = appData.users[friendId];
+                    if (friend) {
+                        const friendWorkouts = appData.workouts[friendId] || [];
+                        leaderboardData.push({
+                            id: friend.id,
+                            name: friend.username,
+                            workouts: friendWorkouts.length,
+                            duration: friendWorkouts.reduce((sum, w) => sum + w.duration, 0) / 60,
+                            streak: friend.streak || 0
+                        });
+                    }
+                });
+                
+                // 按训练次数排序
+                leaderboardData.sort((a, b) => b.workouts - a.workouts);
+                
+                leaderboardData.forEach((user, index) => {
+                    const rank = index + 1;
+                    const leaderboardItem = document.createElement('div');
+                    leaderboardItem.className = 'leaderboard-item';
+                    leaderboardItem.innerHTML = `
+                        <div class="rank">${rank}</div>
+                        <div class="friend-avatar">
+                            <i class="fas fa-user"></i>
+                        </div>
+                        <div class="friend-info">
+                            <div class="friend-name">${user.name}</div>
+                            <div class="friend-stats">${user.workouts} 次训练</div>
+                        </div>
+                        <div class="friend-points">${user.workouts * 10} 分</div>
+                    `;
+                    friendsLeaderboard.appendChild(leaderboardItem);
+                });
+            }
+        }
+
+        // 绑定好友请求操作事件
+        function bindRequestActions() {
+            document.querySelectorAll('.accept-request').forEach(button => {
+                button.addEventListener('click', function() {
+                    const requestId = this.getAttribute('data-request-id');
+                    acceptFriendRequest(requestId);
+                });
+            });
+            
+            document.querySelectorAll('.reject-request').forEach(button => {
+                button.addEventListener('click', function() {
+                    const requestId = this.getAttribute('data-request-id');
+                    rejectFriendRequest(requestId);
+                });
+            });
+        }
+
+        // 同意好友请求
+        function acceptFriendRequest(requestId) {
+            const userFriendRequests = appData.friendRequests[appData.currentUser.id] || [];
+            const requestIndex = userFriendRequests.findIndex(r => r.id === requestId);
+            
+            if (requestIndex !== -1) {
+                const request = userFriendRequests[requestIndex];
+                const requesterId = request.fromUserId;
+                
+                // 添加双向好友关系
+                if (!appData.friends[appData.currentUser.id]) {
+                    appData.friends[appData.currentUser.id] = [];
+                }
+                if (!appData.friends[requesterId]) {
+                    appData.friends[requesterId] = [];
+                }
+                
+                // 检查是否已经是好友
+                if (!appData.friends[appData.currentUser.id].includes(requesterId)) {
+                    appData.friends[appData.currentUser.id].push(requesterId);
+                }
+                if (!appData.friends[requesterId].includes(appData.currentUser.id)) {
+                    appData.friends[requesterId].push(appData.currentUser.id);
+                }
+                
+                // 删除请求
+                userFriendRequests.splice(requestIndex, 1);
+                appData.friendRequests[appData.currentUser.id] = userFriendRequests;
+                
+                // 保存到本地存储
+                localStorage.setItem('fitTogetherFriends', JSON.stringify(appData.friends));
+                localStorage.setItem('fitTogetherFriendRequests', JSON.stringify(appData.friendRequests));
+                
+                alert('已同意好友请求！');
+                
+                // 重新加载好友页面
+                loadFriendsPage();
+                loadFriendsList();
+            }
+        }
+
+        // 拒绝好友请求
+        function rejectFriendRequest(requestId) {
+            const userFriendRequests = appData.friendRequests[appData.currentUser.id] || [];
+            const requestIndex = userFriendRequests.findIndex(r => r.id === requestId);
+            
+            if (requestIndex !== -1) {
+                // 删除请求
+                userFriendRequests.splice(requestIndex, 1);
+                appData.friendRequests[appData.currentUser.id] = userFriendRequests;
+                
+                // 保存到本地存储
+                localStorage.setItem('fitTogetherFriendRequests', JSON.stringify(appData.friendRequests));
+                
+                alert('已拒绝好友请求！');
+                
+                // 重新加载好友页面
+                loadFriendsPage();
+            }
+        }
+
+        // 显示添加好友模态框
+        function showFriendModal() {
+            if (!appData.isLoggedIn) {
+                alert('请先登录！');
+                showAuthModal();
+                return;
+            }
+            
+            document.getElementById('friendModal').style.display = 'flex';
+        }
+
+        // 发送好友请求
+        function sendFriendRequest(e) {
+            e.preventDefault();
+            
+            const friendId = document.getElementById('friendId').value;
+            const userFriends = appData.friends[appData.currentUser.id] || [];
+            
+            // 检查是否已经是好友
+            if (userFriends.includes(friendId)) {
+                alert('该用户已经是您的好友！');
+                return;
+            }
+            
+            // 检查是否是自己的ID
+            if (friendId === appData.currentUser.id) {
+                alert('不能添加自己为好友！');
+                return;
+            }
+            
+            // 检查用户是否存在
+            if (!appData.users[friendId]) {
+                alert('未找到该用户，请检查用户ID是否正确！');
+                return;
+            }
+            
+            // 检查是否已经发送过请求
+            const targetUserRequests = appData.friendRequests[friendId] || [];
+            const existingRequest = targetUserRequests.find(r => r.fromUserId === appData.currentUser.id);
+            if (existingRequest) {
+                alert('您已经向该用户发送过好友请求！');
+                return;
+            }
+            
+            // 创建好友请求
+            const requestId = 'request_' + Date.now();
+            const newRequest = {
+                id: requestId,
+                fromUserId: appData.currentUser.id,
+                toUserId: friendId,
+                timestamp: new Date().toISOString()
+            };
+            
+            // 添加到目标用户的好友请求列表
+            targetUserRequests.push(newRequest);
+            appData.friendRequests[friendId] = targetUserRequests;
+            
+            // 保存到本地存储
+            localStorage.setItem('fitTogetherFriendRequests', JSON.stringify(appData.friendRequests));
+            
+            document.getElementById('friendModal').style.display = 'none';
+            alert('好友请求已发送！');
+        }
+
+        // 加载成就页面
+        function loadAchievementsPage() {
+            const achievementsList = document.getElementById('achievementsList');
+            const userAchievements = appData.achievements[appData.currentUser.id] || [];
+            
+            achievementsList.innerHTML = '';
+            
+            if (userAchievements.length === 0) {
+                achievementsList.innerHTML = '<div class="badge"><i class="fas fa-lock"></i><span>暂无成就</span></div>';
+                return;
+            }
+            
+            userAchievements.forEach(achievement => {
+                const badge = document.createElement('div');
+                badge.className = `badge ${achievement.unlocked ? 'unlocked' : ''}`;
+                badge.title = achievement.description;
+                badge.innerHTML = `
+                    <i class="${achievement.icon}"></i>
+                    <span>${achievement.name}</span>
+                `;
+                achievementsList.appendChild(badge);
+            });
+        }
+
+        // 加载设置页面
+        function loadSettingsPage() {
+            // 启用设置表单
+            document.getElementById('profileForm').querySelectorAll('input, textarea, button').forEach(element => {
+                element.disabled = false;
+            });
+            
+            // 填充用户数据
+            document.getElementById('userNameInput').value = appData.currentUser.username;
+            document.getElementById('userEmail').value = appData.currentUser.email || '';
+            document.getElementById('userBio').value = appData.currentUser.bio || '';
+            document.getElementById('weeklyGoal').value = appData.currentUser.weeklyGoal || 5;
+        }
+
+        // 保存个人设置
+        function saveProfile(e) {
+            e.preventDefault();
+            
+            const username = document.getElementById('userNameInput').value;
+            const email = document.getElementById('userEmail').value;
+            const bio = document.getElementById('userBio').value;
+            const weeklyGoal = document.getElementById('weeklyGoal').value;
+            
+            // 更新当前用户数据
+            appData.currentUser.username = username;
+            appData.currentUser.email = email;
+            appData.currentUser.bio = bio;
+            appData.currentUser.weeklyGoal = parseInt(weeklyGoal);
+            
+            // 更新用户数据
+            appData.users[appData.currentUser.id] = appData.currentUser;
+            localStorage.setItem('fitTogetherUsers', JSON.stringify(appData.users));
+            
+            // 更新页面显示
+            document.getElementById('userName').textContent = username;
+            document.getElementById('profileName').textContent = username;
+            
+            alert('个人设置已保存!');
+        }
+    </script>
 </body>
 </html>
